@@ -1,0 +1,63 @@
+I'm a reasonable man, get off my case - Radiohead, "Packt Like Sardines In a Crushd Tin Box"
+
+`packt` is a tool for interacting with [blocks] files.
+
+[blocks]: https://github.com/htogta/blocks
+
+```
+packt help
+packt version
+packt new blockfile
+packt info [--states] blockfile
+packt clean blockfile [--force] [i:[j]]
+packt read blockfile [--bytes] [i:[j]] [file]
+packt write blockfile [--bytes] [i:[j]] [file]
+packt print blockfile [--lines] i[:j]
+packt archive blockfile [--bytes] [--dir] [i:[j]] path [path2 ...]
+```
+
+Or, for short:
+
+```
+packt help
+packt version
+packt new blockfile
+packt info blockfile [-s]
+packt clean blockfile [-f] [i:[j]]
+packt read blockfile [-b] [i:[j]] [file]
+packt write blockfile [-b] [i:[j]] [file]
+packt print blockfile [-l] i[:j]
+packt archive blockfile [-b] [-d] [i:[j]] path [path2 ...]
+```
+
+```
+packt blockfile --write [i[:j]] [file]
+packt blockfile -w [i[:j]] [file]
+```
+
+^ Write bytes from `file` into the blockfile, starting at block `i` and ending after block `j`. If `file` not provided, uses standard input. `i` is 0 by default, and if `j` is not provided it simply writes to the next blocks until the entire file has been written. Add the `--error` flag to halt with an error if any blocks being written to are not already empty (all zeroes) rather than continuing writing- by default, if a block isn't empty, a warning is printed, but this can be disabled with `--quiet`. 
+
+If the number of blocks specified by the range is *not* enough space to write the file's contents, the program will exit with an error. If it's *too* large, subsequent blocks will have zeroes written to them- disable this with `--nozeroes`.
+
+```
+packt blockfile --writebytes [i] [file]
+packt blockfile -W [i] [file]
+```
+
+```
+packt blockfile --read i[:j] [file]
+packt blockfile -r i[:j] [file]
+```
+
+^ Reads data from the blockfile into `file`. If `j` is not provided, only the one block at position `i` is read. If `file` is not provided, data is written to standard output.
+
+packt blockfile --print i[:j]
+packt blockfile -p i[:j]
+
+- read file bytes into block, starting at block i and ending at block j
+
+- read block range into a file
+- write file as blocks, starting at an index
+- write block to stdout (raw)
+- read stdin into block starting at index
+- pretty-print blocks to stdout
