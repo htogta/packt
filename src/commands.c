@@ -20,9 +20,65 @@ static void packt_warn(const char* fmt, ...) {
   va_end(ap);
 }
 
+static bool resolve_range(
+  const BlockFile* bf, 
+  const uint32_t* i, 
+  const uint32_t* j,
+  bool open_ended,
+  uint32_t* start, 
+  uint32_t* end
+) {
+  if (!i && j) {
+    packt_error("expected range from i:j, only i, or no range at all");
+    return false;
+  }
+  
+  if (bf->count == 0) {
+    packt_error("%s contains no blocks", bf->path);
+    return false;
+  }
+  
+  uint32_t last = bf->count - 1;
+  if (i && *i > last) {
+    packt_error("%u is out of bounds, maximum index is %u", *i, last);
+    return false;
+  }
+  
+  if (j && *j > last) {
+    packt_error("%u is out of bounds, maximum index is %u", *j, last);
+    return false;
+  }
+  
+  *start = i ? *i : 0;
+  
+  if (j) {
+    *end = *j;
+  } else if (i && !open_ended){
+    *end = *i;
+  } else {
+    *end = last;
+  }
+  
+  if (*start > *end) {
+    packt_error("range start %u is after range end %u", *start, *end);
+    return false;
+  }
+  
+  return true;
+}
+
 // print help
 void packt_help() {
-  // TODO
+  printf(
+    "usage:\n"
+    "  packt help\n"
+    "  packt version\n"
+    "  packt new blockfile cap\n"
+    "  packt info blockfile [-s|--states]\n"
+    "  packt clear blockfile [-f|--force] [i[:j]]\n"
+    "  packt read blockfile [i[:j]] [file]\n"
+    "  packt write blockfile [-e|--error] [-q|--quiet] [i[:j]] [file]\n"
+    "  packt print blockfile [-t|--text] [i[:j]]\n");
 }
 
 // print version info (for blocks and packt)
@@ -68,14 +124,11 @@ bool packt_info(const char* bfpath, bool states) {
     return false;
   }
 
-  printf("%s: %d blocks, %u bytes total\n", bf->path, bf->count, bf->count * 1024);
+  printf("%s: %d blocks, %llu bytes total\n", bf->path, bf->count, 
+    (unsigned long long) bf->count * BLOCK_MAX_LENGTH);
 
-  if (!states) {
-    blockfile_close(bf);
-    return true;
-  }
-  
-  // TODO some way of printing how many empty blocks there are
+  // TODO some way of printing how many empty blocks there are 
+  if (states) packt_warn("--states is currently unimplemented");
   
   blockfile_close(bf);
   return true;
@@ -97,11 +150,6 @@ bool packt_clear(
     return false;
   }
 
-  // TODO rework? maybe i: could mean "clear all blocks starting from i to end"
-  if (!i && j) {
-    packt_error("expected range from i:j, only i, or no range at all");
-    return false;
-  }
 
   BlockFile* bf = blockfile_open(bfpath);
   if (!bf) {
@@ -109,23 +157,13 @@ bool packt_clear(
     packt_error("-> %s", blocks_failure_reason());
     return false;
   }
-
-  if (i) {
-    if (*i >= bf->count) {
-      packt_error("%u is out of bounds, maximum index is %u", *i, bf->count - 1);
-      blockfile_close(bf);
-      return false;
-    }
+  
+  uint32_t start, end;
+  if (!resolve_range(bf, i, j, false, &start, &end)) {
+    blockfile_close(bf);
+    return false;
   }
-
-  if (j) {
-    if (*j >= bf->count) {
-      packt_error("%u is out of bounds, maximum index is %u", *j, bf->count - 1);
-      blockfile_close(bf);
-      return false;
-    }
-  }
-
+  
   if (!force) {
     bool yesno = false; // "no" is default
     char input[16];
@@ -163,7 +201,7 @@ bool packt_clear(
   
   // TODO print "cleaning..."? or nah
   uint32_t counter = 0;
-  for (uint32_t idx = i ? (*i) : 0; idx <= (j ? (*j) : bf->count - 1); idx++) {
+  for (uint32_t idx = start; idx <= end; idx++) {
     int ok = block_clear(bf, idx);
     if (!ok) {
       packt_error("failed to zero block %u:", idx);
@@ -193,38 +231,20 @@ bool packt_read(
     packt_error("path to .blocks file required");
     return false;
   }
-
-  if (!i && j) {
-    packt_error("expected range from i:j, only i, or no range at all");
-    return false;
-  }
-
+  
   BlockFile* bf = blockfile_open(bfpath);
   if (!bf) {
     packt_error("failed to open %s", bfpath);
-    packt_error("-> ", blocks_failure_reason());
+    packt_error("-> %s", blocks_failure_reason());
     return false;
   }
 
-  if (i) {
-    if (*i >= bf->count) {
-      packt_error("%u is out of bounds, maximum index is %u", *i, bf->count - 1);
-      blockfile_close(bf);
-      return false;
-    }
+  uint32_t start, end;
+  if (!resolve_range(bf, i, j, false, &start, &end)) {
+    blockfile_close(bf);
+    return false;
   }
-
-  if (j) {
-    if (*j >= bf->count) {
-      packt_error("%u is out of bounds, maximum index is %u", *j, bf->count - 1);
-      blockfile_close(bf);
-      return false;
-    }
-  }
-
-  uint32_t block_start = i ? (*i) : 0;
-  uint32_t block_end = j ? (*j) : bf->count - 1;
-
+  
   FILE* out = stdout;
   if (fpath) {
     out = fopen(fpath, "wb");
@@ -235,7 +255,7 @@ bool packt_read(
     }
   }
 
-  for (uint32_t idx = block_start; idx <= block_end; idx++) {
+  for (uint32_t idx = start; idx <= end; idx++) {
     Block* bl = block_read(bf, idx);
     if (!bl) {
       packt_error("failed to read block %u:", idx);
@@ -274,11 +294,6 @@ bool packt_write(
 ) {
   // in theory I *could* just use blockfile_load_file, but that fails if any of
   // the blocks it uses aren't empty. 
-  if (!i && j) {
-    packt_error("expected range from i:j, only i, or no range at all");
-    return false;
-  }
-
   if (!bfpath) {
     packt_error("path to .blocks file required");
     return false;
@@ -291,20 +306,10 @@ bool packt_write(
     return false;
   }
 
-  if (i) {
-    if (*i >= bf->count) {
-      packt_error("%u is out of bounds, maximum index is %u", *i, bf->count - 1);
-      blockfile_close(bf);
-      return false;
-    }
-  }
-
-  if (j) {
-    if (*j >= bf->count) {
-      packt_error("%u is out of bounds, maximum index is %u", *j, bf->count - 1);
-      blockfile_close(bf);
-      return false;
-    }
+  uint32_t start, end;
+  if (!resolve_range(bf, i, j, true, &start, &end)) {
+    blockfile_close(bf);
+    return false;
   }
 
   if (quiet && error) {
@@ -312,9 +317,6 @@ bool packt_write(
     blockfile_close(bf);
     return false;
   }
-  
-  uint32_t block_start = i ? *i : 0;
-  uint32_t block_end = j ? *j : bf->count - 1;
 
   FILE* in = stdin;
   if (fpath) {
@@ -329,7 +331,21 @@ bool packt_write(
   bool input_done = false;
   bool success = true;
 
-  for (uint32_t idx = block_start; idx <= block_end; idx++) {
+  for (uint32_t idx = start; idx <= end; idx++) {
+    uint8_t data[BLOCK_MAX_LENGTH] = {0};
+    size_t nread = fread(data, 1, BLOCK_MAX_LENGTH, in);
+    if (ferror(in)) {
+      packt_error("failed to read input");
+      success = false;
+      break;
+    }
+    
+    if (nread == 0) { 
+      input_done = true; 
+      break; 
+    }
+    if (nread < BLOCK_MAX_LENGTH) input_done = true;
+    
     // read existing block
     Block* old = block_read(bf, idx);
     if (!old) {
@@ -338,7 +354,7 @@ bool packt_write(
       success = false;
       break;
     }
-
+    
     // check whether the block is empty
     bool occupied = false;
     for (uint32_t k = 0; k < BLOCK_MAX_LENGTH; k++) {
@@ -348,7 +364,7 @@ bool packt_write(
       }
     }
     block_free(old);
-
+    
     if (occupied) {
       if (error) {
         packt_error("block %u already contains data", idx);
@@ -357,20 +373,6 @@ bool packt_write(
       }
 
       if (!quiet) packt_warn("block %u already contains data", idx);
-    }
-    
-    uint8_t data[BLOCK_MAX_LENGTH] = {0};
-    size_t nread = 0;
-    if (!input_done) {
-      nread = fread(data, 1, BLOCK_MAX_LENGTH, in);
-
-      if (ferror(in)) {
-        packt_error("failed to read input");
-        success = false;
-        break;
-      }
-
-      if (nread < BLOCK_MAX_LENGTH) input_done = true;
     }
 
     Block* bl = block_new(data, BLOCK_MAX_LENGTH);
@@ -383,17 +385,25 @@ bool packt_write(
 
     // write the block
     bl->number = idx;
-    if (!block_update(bf, bl)) {
+    bool ok = block_update(bf, bl);
+    block_free(bl); 
+    
+    if (!ok) {
       packt_error("failed to write block %u:", idx);
       packt_error("-> %s", blocks_failure_reason());
-      block_free(bl);
       success = false;
       break;
     }
 
-    block_free(bl);
+    if (input_done) break;
   }
-  
+
+  if (success && !input_done && fgetc(in) != EOF) {
+    packt_error("input didn't fit in blocks %u through %u, the rest was dropped", start, end);
+    success = false;
+  }
+
+  if (fpath) fclose(in);
   blockfile_close(bf);
   return success;
 }
@@ -405,11 +415,6 @@ bool packt_print(const char* bfpath, bool text, uint32_t* i, uint32_t* j) {
     return false;
   }
 
-  if (!i && j) {
-    packt_error("expected range from i:j, only i, or no range at all");
-    return false;
-  }
-
   BlockFile* bf = blockfile_open(bfpath);
   if (!bf) {
     packt_error("failed to open %s:", bfpath);
@@ -417,20 +422,10 @@ bool packt_print(const char* bfpath, bool text, uint32_t* i, uint32_t* j) {
     return false;
   }
 
-  if (i) {
-    if (*i >= bf->count) {
-      packt_error("%u is out of bounds, maximum index is %u", *i, bf->count - 1);
-      blockfile_close(bf);
-      return false;
-    }
-  }
-
-  if (j) {
-    if (*j >= bf->count) {
-      packt_error("%u is out of bounds, maximum index is %u", *j, bf->count - 1);
-      blockfile_close(bf);
-      return false;
-    }
+  uint32_t start, end;
+  if (!resolve_range(bf, i, j, false, &start, &end)) {
+    blockfile_close(bf);
+    return false;
   }
 
   // calculate line number width
@@ -449,9 +444,7 @@ bool packt_print(const char* bfpath, bool text, uint32_t* i, uint32_t* j) {
     addr_width++;
   }
   
-  uint32_t block_start = i ? (*i) : 0;
-  uint32_t block_end = j ? (*j) : bf->count - 1;
-  for (uint32_t idx = block_start; idx <= block_end; idx++) {
+  for (uint32_t idx = start; idx <= end; idx++) {
     Block* bl = block_read(bf, idx);
     if (!bl) {
       packt_error("failed to read block %u:", idx);
