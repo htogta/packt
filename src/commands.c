@@ -292,8 +292,6 @@ bool packt_write(
   uint32_t* i, 
   uint32_t* j
 ) {
-  // in theory I *could* just use blockfile_load_file, but that fails if any of
-  // the blocks it uses aren't empty. 
   if (!bfpath) {
     packt_error("path to .blocks file required");
     return false;
@@ -333,18 +331,16 @@ bool packt_write(
 
   for (uint32_t idx = start; idx <= end; idx++) {
     uint8_t data[BLOCK_MAX_LENGTH] = {0};
-    size_t nread = fread(data, 1, BLOCK_MAX_LENGTH, in);
-    if (ferror(in)) {
-      packt_error("failed to read input");
-      success = false;
-      break;
-    }
     
-    if (nread == 0) { 
-      input_done = true; 
-      break; 
+    if (!input_done) {
+      size_t nread = fread(data, 1, BLOCK_MAX_LENGTH, in);
+      if (ferror(in)) {
+        packt_error("failed to read input");
+        success = false;
+        break;
+      }
+      if (nread < BLOCK_MAX_LENGTH) input_done = true;
     }
-    if (nread < BLOCK_MAX_LENGTH) input_done = true;
     
     // read existing block
     Block* old = block_read(bf, idx);
@@ -394,8 +390,6 @@ bool packt_write(
       success = false;
       break;
     }
-
-    if (input_done) break;
   }
 
   if (success && !input_done && fgetc(in) != EOF) {
