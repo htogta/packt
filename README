@@ -1,63 +1,86 @@
 I'm a reasonable man, get off my case - Radiohead, "Packt Like Sardines In a Crushd Tin Box"
 
-`packt` is a tool for interacting with [blocks] files.
+`packt` is a tool for interacting with [blocks] files. 
 
 [blocks]: https://github.com/htogta/blocks
 
+Build it with `just build`, or, if you don't have [just] installed:
+
 ```
-packt help
-packt version
-packt new blockfile
-packt info [--states] blockfile
-packt clean blockfile [--force] [i:[j]]
-packt read blockfile [--bytes] [i:[j]] [file]
-packt write blockfile [--bytes] [i:[j]] [file]
-packt print blockfile [--lines] i[:j]
-packt archive blockfile [--bytes] [--dir] [i:[j]] path [path2 ...]
+mkdir -p build && cc -o build/packt src/main.c src/commands.c
 ```
 
-Or, for short:
+The binary can then be found at `build/packt`.
+
+`packt` supports the following subcommands:
 
 ```
 packt help
 packt version
-packt new blockfile
-packt info blockfile [-s]
-packt clean blockfile [-f] [i:[j]]
-packt read blockfile [-b] [i:[j]] [file]
-packt write blockfile [-b] [i:[j]] [file]
-packt print blockfile [-l] i[:j]
-packt archive blockfile [-b] [-d] [i:[j]] path [path2 ...]
+packt new blockfile cap
+packt info blockfile [-s|--states]
+packt clear blockfile [-f|--force] [i[:j]]
+packt read blockfile [i[:j]] [file]
+packt write blockfile [-e|--error] [-q|--quiet] [i[:j]] [file]
+packt print blockfile [-t|--text] [i[:j]]
 ```
 
-```
-packt blockfile --write [i[:j]] [file]
-packt blockfile -w [i[:j]] [file]
-```
-
-^ Write bytes from `file` into the blockfile, starting at block `i` and ending after block `j`. If `file` not provided, uses standard input. `i` is 0 by default, and if `j` is not provided it simply writes to the next blocks until the entire file has been written. Add the `--error` flag to halt with an error if any blocks being written to are not already empty (all zeroes) rather than continuing writing- by default, if a block isn't empty, a warning is printed, but this can be disabled with `--quiet`. 
-
-If the number of blocks specified by the range is *not* enough space to write the file's contents, the program will exit with an error. If it's *too* large, subsequent blocks will have zeroes written to them- disable this with `--nozeroes`.
+Printing help/usage info:
 
 ```
-packt blockfile --writebytes [i] [file]
-packt blockfile -W [i] [file]
+packt help
 ```
 
+Printing version info for `packt` and its `blocks.h` library dependency:
+
 ```
-packt blockfile --read i[:j] [file]
-packt blockfile -r i[:j] [file]
+packt version
 ```
 
-^ Reads data from the blockfile into `file`. If `j` is not provided, only the one block at position `i` is read. If `file` is not provided, data is written to standard output.
+To create a new blockfile, do the following:
 
-packt blockfile --print i[:j]
-packt blockfile -p i[:j]
+```
+packt new path_to_file.blocks capacity
+```
 
-- read file bytes into block, starting at block i and ending at block j
+`capacity` is a 32-bit unsigned integer, which must be at least 1. This capacity *cannot* be resized.
 
-- read block range into a file
-- write file as blocks, starting at an index
-- write block to stdout (raw)
-- read stdin into block starting at index
-- pretty-print blocks to stdout
+To get info about an existing blockfile, do the following:
+
+```
+packt info path_to_file.blocks
+```
+
+This prints capacity information- the number of blocks, and the amount of bytes (i.e. number of blocks times 1024). Use the `-s` or `--states` flag to print basic information about the state of each of the blocks (basically just showing you sparse or full sections of the file).
+
+To wipe blocks clean (i.e. overwrite their contents with zeroes), do the following:
+
+```
+packt clear path_to_file.blocks i:j
+```
+
+Here, `i` and `j` are both block numbers. Doing `1:3` clears blocks 1, 2, and 3. Just doing `1` only clears block 1. Passing *no* number clears the *entire* blockfile. This command prompts you to check if you're sure before performing the operation- you can bypass this prompt with the `-f` or `--force` flag.
+
+To read data from a blockfile, do the following:
+
+```
+packt read path_to_file.blocks i:j output_file
+```
+
+The `i` and `j` (range) arguments follow the same rules as `packt clear`. If `output_file` is provided, it writes the block data to a file at that path, otherwise it writes the data to standard output. It reads *all* the data from each block- including null bytes that may be at the end of a block.
+
+To write data to a blockfile, do the following:
+
+```
+packt write path_to_file.blocks i:j input_file
+```
+
+The `i:j` argument behaves the same as it does for `read` and `clear`. If `input_file` is provided, the data that gets written to the blockfile is read from a file at that path, otherwise it writes data coming from standard input. As the data is written, if `packt` runs out of data to write before reaching the end of the block range, *null bytes* are written until it reaches the end of the range, rather than just halting writing. `packt write`, by default, will print a warning if you end up overwriting a block with data in it- you can disable this warning with `-q` or `--quiet`, or, instead, if you'd like it to stop writing and print an error when this occurs instead, use `-e` or `--error`.
+
+Finally, to pretty-print block data, do the following:
+
+```
+packt print path_to_file.blocks i:j
+```
+
+The range `i:j` behaves the same as it does for the other commands. By default, it prints in "raw" mode- printing the raw hex values for the bytes in each block. To instead print data as text (with line numbers), use the `-t` or `--text` option. 
