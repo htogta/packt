@@ -75,7 +75,7 @@ To write data to a blockfile, do the following:
 packt write path_to_file.blocks i:j input_file
 ```
 
-The `i:j` argument behaves the same as it does for `read` and `clear`. If `input_file` is provided, the data that gets written to the blockfile is read from a file at that path, otherwise it writes data coming from standard input. As the data is written, if `packt` runs out of data to write before reaching the end of the block range, *null bytes* are written until it reaches the end of the range, rather than just halting writing. `packt write`, by default, will print a warning if you end up overwriting a block with data in it- you can disable this warning with `-q` or `--quiet`, or, instead, if you'd like it to stop writing and print an error when this occurs instead, use `-e` or `--error`.
+The `i:j` argument behaves the same as it does for `read` and `clear`. If `input_file` is provided, the data that gets written to the blockfile is read from a file at that path, otherwise it writes data coming from standard input. As the data is written, if `packt` runs out of data to write before reaching the end of the block range, *null bytes* are written until it reaches the end of the range, rather than just halting writing. Conversely, if the data you're trying to write doesn't fit in the provided range of blocks, the remaining data is dropped and `packt` exits with an error. `packt write`, by default, will print a warning if you end up overwriting a block with data in it- you can disable this warning with `-q` or `--quiet`, or, instead, if you'd like it to stop writing and print an error when this occurs instead, use `-e` or `--error`.
 
 Finally, to pretty-print block data, do the following:
 
