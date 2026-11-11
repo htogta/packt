@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <stdarg.h>
 
+#define PACKT_VERSION ("0.1.0")
+
 // print help
 void packt_help();
 

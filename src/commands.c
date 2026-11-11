@@ -83,7 +83,7 @@ void packt_help() {
 
 // print version info (for blocks and packt)
 void packt_version() {
-  printf("packt v0.1.0\n");
+  printf("packt v%s\n", PACKT_VERSION);
   printf("blocks.h v%s\n", BLOCKS_VERSION);
 }
 
