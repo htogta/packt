@@ -181,12 +181,13 @@ int main(int argc, char** argv) {
   }
  
   if (!strcmp(cmd, "write")) {
-    if (!parse(ac, av, "eq", &o) || !parse_tail(&o, &r, &file)) return 1;
+    if (!parse(ac, av, "eqr", &o) || !parse_tail(&o, &r, &file)) return 1;
     return !packt_write(
       o.pos[0], 
       file, 
       o.flag['e'], 
       o.flag['q'],
+      o.flag['r'],
       r.has_i ? &r.i : NULL, 
       r.has_j ? &r.j : NULL
     );

@@ -77,7 +77,7 @@ void packt_help() {
     "  packt info blockfile [-s|--states]\n"
     "  packt clear blockfile [-f|--force] [-r|--rollback] [i[:j]]\n"
     "  packt read blockfile [i[:j]] [file]\n"
-    "  packt write blockfile [-e|--error] [-q|--quiet] [i[:j]] [file]\n"
+    "  packt write blockfile [-e|--error] [-q|--quiet] [-r|--rollback] [i[:j]] [file]\n"
     "  packt print blockfile [-t|--text] [i[:j]]\n");
 }
 
@@ -137,7 +137,11 @@ bool packt_info(const char* bfpath, bool states) {
 // zero-out blocks
 // uses journal if rollback flag set
 bool packt_clear(
-  const char* bfpath, bool force, bool rollback, uint32_t* i, uint32_t* j
+  const char* bfpath, 
+  bool force, 
+  bool rollback, 
+  uint32_t* i, 
+  uint32_t* j
 ) {
   if (!bfpath) {
     packt_error("path to .blocks file required");
@@ -384,6 +388,7 @@ bool packt_write(
   const char* fpath, 
   bool error,
   bool quiet,
+  bool rollback,
   uint32_t* i, 
   uint32_t* j
 ) {
@@ -421,11 +426,24 @@ bool packt_write(
     }
   }
 
+  // journal for restoring blocks from before the write
+  FILE* journal = NULL;
+  if (rollback) {
+    journal = tmpfile();
+    if (!journal) {
+      packt_error("failed to create rollback journal");
+      if (fpath) fclose(in);
+      blockfile_close(bf);
+      return false;
+    }
+  }
+
   bool input_done = false;
   bool success = true;
 
   for (uint32_t idx = start; idx <= end; idx++) {
     uint8_t data[BLOCK_MAX_LENGTH] = {0};
+    bool have_data = false;
     
     if (!input_done) {
       size_t nread = fread(data, 1, BLOCK_MAX_LENGTH, in);
@@ -434,6 +452,7 @@ bool packt_write(
         success = false;
         break;
       }
+      have_data = nread > 0;
       if (nread < BLOCK_MAX_LENGTH) input_done = true;
     }
     
@@ -454,17 +473,37 @@ bool packt_write(
         break;
       }
     }
-    block_free(old);
     
     if (occupied) {
       if (error) {
         packt_error("block %u already contains data", idx);
+        block_free(old);
         success = false;
         break;
       }
 
       if (!quiet) packt_warn("block %u already contains data", idx);
     }
+
+    // nothing to write and nothing to roll back
+    if (rollback && !occupied && !have_data) {
+      block_free(old);
+      continue;
+    }
+
+    if (rollback) { // journal before writing
+      if (
+        fwrite(&idx, sizeof(idx), 1, journal) != 1 ||
+        fwrite(old->data, 1, BLOCK_MAX_LENGTH, journal) != BLOCK_MAX_LENGTH
+      ) {
+        packt_error("failed to journal block %u", idx);
+        block_free(old);
+        success = false;
+        break;
+      }
+    }
+
+    block_free(old);
 
     Block* bl = block_new(data, BLOCK_MAX_LENGTH);
     if (!bl) {
@@ -491,6 +530,56 @@ bool packt_write(
     packt_error("input didn't fit in blocks %u through %u, the rest was dropped", start, end);
     success = false;
   }
+
+  if (!success && rollback) { // restore journaled blocks
+    rewind(journal);
+
+    uint32_t restored = 0;
+    bool complete = true;
+
+    for (;;) {
+      uint32_t num;
+      uint8_t data[BLOCK_MAX_LENGTH];
+
+      if (fread(&num, sizeof(num), 1, journal) != 1) break;
+
+      if (fread(data, 1, BLOCK_MAX_LENGTH, journal) != BLOCK_MAX_LENGTH) {
+        packt_error(
+          "failed to read rollback journal, %s may be partially written",
+          bf->path);
+        complete = false;
+        break;
+      }
+
+      Block* bl = block_new(data, BLOCK_MAX_LENGTH);
+      if (!bl) {
+        packt_error("failed to restore block %u:", num);
+        packt_error("-> %s", blocks_failure_reason());
+        complete = false;
+        break;
+      }
+
+      bl->number = num;
+      bool ok = block_update(bf, bl);
+      block_free(bl);
+
+      if (!ok) {
+        packt_error(
+          "failed to restore block %u, %s may be left partially written",
+          num, bf->path);
+        complete = false;
+        break;
+      }
+
+      restored++;
+    }
+    
+    if (complete && restored > 0) {
+      fprintf(stderr, "Restored %u blocks\n", restored);
+    }
+  }
+
+  if (journal) fclose(journal);
 
   if (fpath) fclose(in);
   blockfile_close(bf);

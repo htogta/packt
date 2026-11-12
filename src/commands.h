@@ -42,6 +42,7 @@ bool packt_write(
   const char* fpath,  
   bool error,
   bool quiet,
+  bool rollback,
   uint32_t* i, 
   uint32_t* j
 );
