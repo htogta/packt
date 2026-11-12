@@ -19,9 +19,9 @@ packt help
 packt version
 packt new blockfile cap
 packt info blockfile [-s|--states]
-packt clear blockfile [-f|--force] [i[:j]]
+packt clear blockfile [-f|--force] [-r|--rollback] [i[:j]]
 packt read blockfile [i[:j]] [file]
-packt write blockfile [-e|--error] [-q|--quiet] [i[:j]] [file]
+packt write blockfile [-e|--error] [-q|--quiet] [-r|--rollback] [i[:j]] [file]
 packt print blockfile [-t|--text] [i[:j]]
 ```
 
@@ -59,7 +59,7 @@ To wipe blocks clean (i.e. overwrite their contents with zeroes), do the followi
 packt clear path_to_file.blocks i:j
 ```
 
-Here, `i` and `j` are both block numbers. Doing `1:3` clears blocks 1, 2, and 3. Just doing `1` only clears block 1. Passing *no* number clears the *entire* blockfile. This command prompts you to check if you're sure before performing the operation- you can bypass this prompt with the `-f` or `--force` flag.
+Here, `i` and `j` are both block numbers. Doing `1:3` clears blocks 1, 2, and 3. Just doing `1` only clears block 1. Passing *no* number clears the *entire* blockfile. This command prompts you to check if you're sure before performing the operation- you can bypass this prompt with the `-f` or `--force` flag. This command also supports the `-r` or `--rollback` flag- when this is present, if an error occurs in the middle of clearing blocks, the blocks that had already been cleared before the error will be restored to their original states.
 
 To read data from a blockfile, do the following:
 
@@ -75,7 +75,7 @@ To write data to a blockfile, do the following:
 packt write path_to_file.blocks i:j input_file
 ```
 
-The `i:j` argument behaves the same as it does for `read` and `clear`. If `input_file` is provided, the data that gets written to the blockfile is read from a file at that path, otherwise it writes data coming from standard input. As the data is written, if `packt` runs out of data to write before reaching the end of the block range, *null bytes* are written until it reaches the end of the range, rather than just halting writing. Conversely, if the data you're trying to write doesn't fit in the provided range of blocks, the remaining data is dropped and `packt` exits with an error. `packt write`, by default, will print a warning if you end up overwriting a block with data in it- you can disable this warning with `-q` or `--quiet`, or, instead, if you'd like it to stop writing and print an error when this occurs instead, use `-e` or `--error`.
+The `i:j` argument behaves the same as it does for `read` and `clear`. If `input_file` is provided, the data that gets written to the blockfile is read from a file at that path, otherwise it writes data coming from standard input. As the data is written, if `packt` runs out of data to write before reaching the end of the block range, *null bytes* are written until it reaches the end of the range, rather than just halting writing. Conversely, if the data you're trying to write doesn't fit in the provided range of blocks, the remaining data is dropped and `packt` exits with an error. `packt write`, by default, will print a warning if you end up overwriting a block with data in it- you can disable this warning with `-q` or `--quiet`, or, instead, if you'd like it to stop writing and print an error when this occurs instead, use `-e` or `--error`. Like the `clear` command, `write` also supports `-r`/`--rollback` to restore blocks that were written before an error occurred to their original states.
 
 Finally, to pretty-print block data, do the following:
 
