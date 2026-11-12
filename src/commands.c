@@ -75,7 +75,7 @@ void packt_help() {
     "  packt version\n"
     "  packt new blockfile cap\n"
     "  packt info blockfile [-s|--states]\n"
-    "  packt clear blockfile [-f|--force] [i[:j]]\n"
+    "  packt clear blockfile [-f|--force] [-r|--rollback] [i[:j]]\n"
     "  packt read blockfile [i[:j]] [file]\n"
     "  packt write blockfile [-e|--error] [-q|--quiet] [i[:j]] [file]\n"
     "  packt print blockfile [-t|--text] [i[:j]]\n");
@@ -135,22 +135,14 @@ bool packt_info(const char* bfpath, bool states) {
 }
 
 // zero-out blocks
-// if i not null and j is null, zeroes only block i
-// if i null and j not null, error (shouldn't even happen tbh)
-// if i and j both null, zeroes full blockfile
-// if force true, don't prompt first
-// transactional- if the clear fails midway, cleared blocks are restored
+// uses journal if rollback flag set
 bool packt_clear(
-  const char* bfpath, 
-  bool force, 
-  uint32_t* i, 
-  uint32_t* j
+  const char* bfpath, bool force, bool rollback, uint32_t* i, uint32_t* j
 ) {
   if (!bfpath) {
     packt_error("path to .blocks file required");
     return false;
   }
-
 
   BlockFile* bf = blockfile_open(bfpath);
   if (!bf) {
@@ -199,51 +191,56 @@ bool packt_clear(
       return true;
     }
   }
-  
-  // TODO print "cleaning..."? or nah
 
   // holds the pre-clear contents of cleared blocks so they can be restored
-  FILE* journal = tmpfile();
-  if (!journal) {
-    packt_error("failed to create rollback journal");
-    blockfile_close(bf);
-    return false;
+  FILE* journal = NULL;
+  if (rollback) {
+    journal = tmpfile();
+    if (!journal) {
+      packt_error("failed to create rollback journal");
+      blockfile_close(bf);
+      return false;
+    }
   }
 
   uint32_t counter = 0;
   bool success = true;
 
   for (uint32_t idx = start; idx <= end; idx++) {
-    Block* bl = block_read(bf, idx);
-    if (!bl) {
-      packt_error("failed to read block %u:", idx);
-      packt_error("-> %s", blocks_failure_reason());
-      success = false;
-      break;
-    }
+    bool occupied = true;
 
-    // check if empty
-    bool occupied = false;
-    for (uint32_t k = 0; k < BLOCK_MAX_LENGTH; k++) {
-      if (bl->data[k] != 0) {
-        occupied = true;
-        break;
-      }
-    }
-
-    if (occupied) {
-      if ( // journal before clearing
-        fwrite(&idx, sizeof(idx), 1, journal) != 1 ||
-        fwrite(bl->data, 1, BLOCK_MAX_LENGTH, journal) != BLOCK_MAX_LENGTH
-      ) {
-        packt_error("failed to journal block %u", idx);
-        block_free(bl);
+    if (rollback) {
+      Block* bl = block_read(bf, idx);
+      if (!bl) {
+        packt_error("failed to read block %u:", idx);
+        packt_error("-> %s", blocks_failure_reason());
         success = false;
         break;
       }
-    }
 
-    block_free(bl);
+      // check if empty
+      occupied = false;
+      for (uint32_t k = 0; k < BLOCK_MAX_LENGTH; k++) {
+        if (bl->data[k] != 0) {
+          occupied = true;
+          break;
+        }
+      }
+
+      if (occupied) {
+        if ( // journal before clearing
+          fwrite(&idx, sizeof(idx), 1, journal) != 1 ||
+          fwrite(bl->data, 1, BLOCK_MAX_LENGTH, journal) != BLOCK_MAX_LENGTH
+        ) {
+          packt_error("failed to journal block %u", idx);
+          block_free(bl);
+          success = false;
+          break;
+        }
+      }
+
+      block_free(bl);
+    }
 
     // already-empty blocks are skipped
     if (occupied && !block_clear(bf, idx)) {
@@ -256,7 +253,7 @@ bool packt_clear(
     counter++;
   }
 
-  if (!success) {
+  if (!success && rollback) {
     // roll back- restore the journaled blocks to their pre-clear state
     rewind(journal);
 
@@ -305,7 +302,7 @@ bool packt_clear(
     }
   }
 
-  fclose(journal);
+  if (journal) fclose(journal);
 
   if (!success) {
     blockfile_close(bf);

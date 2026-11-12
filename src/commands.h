@@ -23,6 +23,7 @@ bool packt_info(const char* bfpath, bool states);
 bool packt_clear(
   const char* bfpath, 
   bool force, 
+  bool rollback,
   uint32_t* i, 
   uint32_t* j
 );

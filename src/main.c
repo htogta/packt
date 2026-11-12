@@ -8,7 +8,7 @@
 #define MAX_POSITIONALS (8)
 
 // every short flag is the first letter of its long flag
-static const char* LONG_FLAGS[] = {"states", "force", "error", "quiet", "text"};
+static const char* LONG_FLAGS[] = {"states", "force", "rollback", "error", "quiet", "text"};
 
 typedef struct {
   bool flag[256]; // flag['f'] is true if -f/--force given
@@ -49,7 +49,7 @@ static bool parse(int argc, char** argv, const char* allowed, Opts* o) {
      
     char c = 0;
     if (arg[1] == '-') {
-      for (int k = 0; k < 5; k++) {
+      for (int k = 0; k < 6; k++) {
         if (strcmp(arg + 2, LONG_FLAGS[k]) == 0) c = LONG_FLAGS[k][0];
       }
     } else if (arg[1] && !arg[2]) {
@@ -160,10 +160,11 @@ int main(int argc, char** argv) {
   }
   
   if (!strcmp(cmd, "clear")) {
-    if (!parse(ac, av, "f", &o) || !parse_tail(&o, &r, NULL)) return 1;
+    if (!parse(ac, av, "fr", &o) || !parse_tail(&o, &r, NULL)) return 1;
     return !packt_clear(
       o.pos[0], 
       o.flag['f'],
+      o.flag['r'],
       r.has_i ? &r.i : NULL, 
       r.has_j ? &r.j : NULL
     );
